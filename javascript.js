@@ -1,10 +1,30 @@
-//Problem: user interaction doesn't provide desired results
-//Solution: add interactivity so the user can manage daily tasks.
-
 var taskInput = document.getElementById("new-task"); // new-task
 var addButton = document.getElementsByTagName("button")[0];//first button
 var incompleteTasksHolder = document.getElementById("incomplete-tasks"); //incomplete-tasks
 var completedTasksHolder = document.getElementById("completed-tasks"); //completed-tasks
+
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+import { firestore } from "firebase/firestore";
+
+// Your web app's Firebase configuration
+var firebaseConfig = {
+  apiKey: "AIzaSyDoCcDbXMxxNh2F9pxErtp771d5FvCMRlg",
+  authDomain: "to-do-list-9619b.firebaseapp.com",
+  projectId: "to-do-list-9619b",
+  storageBucket: "to-do-list-9619b.appspot.com",
+  messagingSenderId: "906292736014",
+  appId: "1:906292736014:web:89dda87c92905fdd720c5f"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+// Get a reference to the Firestore database
+const db = firestore(app);
+
+
 
 //New Task List item
 
@@ -52,69 +72,138 @@ var addTask = function() {
   var listItem = createNewTaskElement(taskInput.value);
   //Append listItem to incompleteTaskHolder
   incompleteTasksHolder.appendChild(listItem);
+  // Save the new task to Firestore
+  db.collection("tasks").add({
+    text: taskInput.value,
+    completed: false
+  })
+  .then(function(docRef) {
+    console.log("Document written with ID: ", docRef.id);
+    // Set a data attribute on the list item with the Firestore document ID
+    listItem.setAttribute("data-task-id", docRef.id);
+  })
+  .catch(function(error) {
+    console.error("Error adding document: ", error);
+  });
   bindTaskEvents(listItem, taskCompleted);
   taskInput.value = "";
+
+  // Add an event listener to the list item's edit button
+  var editButton = listItem.querySelector(".edit");
+  editButton.addEventListener("click", editTask);
+
+  // Add an event listener to the list item's delete button
+  var deleteButton = listItem.querySelector(".delete");
+  deleteButton.addEventListener("click", deleteTask);
+
+  // Add an event listener to the list item's checkbox
+  var checkBox = listItem.querySelector("input[type=checkbox]");
+  checkBox.addEventListener("change", taskCompleted);
+};
+
+const tasksRef = firebase.database().ref('tasks');
+
+// Find task by ID
+function findTaskById(taskList, taskId) {
+  return taskList.find(task => task.id === taskId);
 }
 
-//Edit an existing task
-var editTask = function() {
-    console.log("Edit Task...");
-  
-var listItem = this.parentNode;
-  
-var editInput = listItem.querySelector("input[type=text]");
-var label = listItem.querySelector("label");
-  
-var containsClass = listItem.classList.contains("editMode");
-  
-  
-  // if class of the parent is .editMode
-  if (containsClass) {
-      //Switch from .editMode
-      //label text become the input's value
-      label.innerText = editInput.value;
-  } else {
-      //Switch to .editMode
-      //input value becomes the labels text
-     	editInput.value = label.innerText;
+// Edit task
+function editTask(taskId) {
+  const taskList = getTaskList();
+  const task = findTaskById(taskList, taskId);
+
+  if (!task) {
+    console.log('Task not found');
+    return;
   }
-  //Toggle .editMode on the parent 
-  listItem.classList.toggle("editMode");
+
+  console.log('Current task:', task);
+  
+  const newTitle = prompt('Enter new title (or leave blank to keep current title):', task.title) || task.title;
+  const newDescription = prompt('Enter new description (or leave blank to keep current description):', task.description) || task.description;
+  const newDueDate = prompt('Enter new due date (or leave blank to keep current due date):', task.dueDate) || task.dueDate;
+  
+  const updatedTask = {
+    ...task,
+    title: newTitle,
+    description: newDescription,
+    dueDate: newDueDate,
+  };
+  
+  tasksRef.child(taskId).set(updatedTask)
+    .then(() => {
+      console.log('Task updated successfully');
+    })
+    .catch(error => {
+      console.error('Error updating task:', error);
+    });
 }
 
-//Delete an existing task
-var deleteTask = function () {
-    console.log("Delete Task...");
-		//Remove the parent list item from the ul
-  	var listItem = this.parentNode;
-  	var ul = listItem.parentNode;
+// Delete task
+function deleteTask(taskId) {
+  const taskList = getTaskList();
+  const task = findTaskById(taskList, taskId);
+
+  if (!task) {
+    console.log('Task not found');
+    return;
+  }
   
-  	ul.removeChild(listItem);
+  tasksRef.child(taskId).remove()
+    .then(() => {
+      console.log('Task deleted successfully');
+    })
+    .catch(error => {
+      console.error('Error deleting task:', error);
+    });
 }
 
 //Mark a task as complete
 var taskCompleted = function() {
-   console.log("Task Complete...");
+  console.log("Task Complete...");
   //When the Checkbox is checked 
   //Append the task list item to the #completed-tasks ul
-   var listItem = this.parentNode;
-   completedTasksHolder.appendChild(listItem);
-   bindTaskEvents(listItem, taskIncomplete);
+  var listItem = this.parentNode;
+  completedTasksHolder.appendChild(listItem);
+  // Get the Firestore document ID from the data attribute
+  var taskId = listItem.getAttribute("data-task-id");
+  // Update the completed field in the Firestore document
+  db.collection("tasks").doc(taskId).update({
+    completed: true
+  })
+  .then(function() {
+    console.log("Document successfully updated");
+  })
+  .catch(function(error) {
+    console.error("Error updating document: ", error);
+  });
+  bindTaskEvents(listItem, taskIncomplete);
 }
-
 
 //Mark a task as incomplete
 var taskIncomplete = function() {
   console.log("Task Incomplete...");
- 	//When the checkbox is unchecked appendTo #incomplete-tasks
+  //When the checkbox is unchecked appendTo #incomplete-tasks
   var listItem = this.parentNode;
   incompleteTasksHolder.appendChild(listItem);
-  bindTaskEvents(listItem, taskCompleted);
+  // Get the Firestore document ID from the data attribute
+  var taskId = listItem.getAttribute("data-task-id");
+  // Update the completed field in the Firestore document
+  db.collection("tasks").doc(taskId).update({
+    completed: false
+  })
+  .then(function() {
+    console.log("Document successfully updated");
+  })
+  .catch(function(error) {
+    console.error("Error updating document: ", error);
+  });
 }
 
-
 //Set the click handler to the addTask function
-addButton.addEventListener("click", addTask); 
+addButton.addEventListener("click", addTask);
+
 
 
 var bindTaskEvents = function(taskListItem, checkBoxEventHandler) {
